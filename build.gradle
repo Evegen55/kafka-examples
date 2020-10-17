@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+}
+
+group 'org.example'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+    maven {
+        url "https://packages.confluent.io/maven/"
+    }
+}
+
+dependencies {
+    compile 'org.apache.kafka:kafka_2.13:6.0.0-ccs'
+    compile 'org.apache.kafka:kafka-streams:6.0.0-ccs'
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
