@@ -4,6 +4,9 @@ import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.clients.producer.KafkaProducer;
+import org.apache.kafka.clients.producer.Producer;
+import org.apache.kafka.clients.producer.ProducerRecord;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
@@ -19,11 +22,18 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
+import java.util.UUID;
 
 public class App {
 
     private static final String HOST = "localhost";
     private static final String PORT = "9092";
+
+    private static final String KEY_SERIALIZER = "key.serializer";
+    private static final String VALUE_SERIALIZER = "value.serializer";
+
+    private static final String KEY_DESERIALIZER = "key.deserializer";
+    private static final String VALUE_DESERIALIZER = "value.deserializer";
 
     private static final String GROUP = "test-apps";
 
@@ -35,15 +45,35 @@ public class App {
     private static final String TOPIC_1 = "quickstart-events";
     private static final String TOPIC_2 = "WordsWithCountsTopic";
 
-    public static void main(String[] args) {
-        new Thread(() -> startSimpleKafkaProducer(APP_1_NAME, TOPIC_1)).start();
+    public static void main(String[] args) throws InterruptedException {
         new Thread(() -> startSimpleKafkaClient(APP_2_NAME, TOPIC_1)).start();
+        new Thread(() -> startSimpleKafkaProducer(APP_1_NAME, TOPIC_1)).start();
         new Thread(() -> startSimpleKafkaStreamsApp(APP_3_NAME, TOPIC_1, TOPIC_2)).start();
         new Thread(() -> startSimpleKafkaClient(APP_4_NAME, TOPIC_2)).start();
+
+        Thread.sleep(100000);
     }
 
-    private static void startSimpleKafkaProducer(final String app1Name, final String topic1Name) {
-        // TODO: 18.10.2020 Kafka producer with delay between producing and consuming to actually show how it works
+    private static void startSimpleKafkaProducer(final String appName, final String topicName) {
+        final Properties config = new Properties();
+        config.put(CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG, HOST + ":" + PORT);
+        config.put(CommonClientConfigs.CLIENT_ID_CONFIG, appName);
+        config.put("acks", "all");
+        config.put(KEY_SERIALIZER, "org.apache.kafka.common.serialization.StringSerializer");
+        config.put(VALUE_SERIALIZER, "org.apache.kafka.common.serialization.StringSerializer");
+
+        final Producer<String, String> producer = new KafkaProducer<>(config);
+        for (int i = 0; i < 100; i++) {
+            final String toSend = Integer.toString(i) + UUID.randomUUID();
+            producer.send(new ProducerRecord<String, String>(topicName, Integer.toString(i), toSend));
+            System.out.println(Thread.currentThread() + "\t" + appName + "\t" + toSend);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        producer.close();
     }
 
     private static void startSimpleKafkaClient(final String appName, final String topicName) {
@@ -54,8 +84,8 @@ public class App {
         config.put("enable.auto.commit", "true");
         config.put("auto.commit.interval.ms", "1000");
         config.put(CommonClientConfigs.SESSION_TIMEOUT_MS_CONFIG, "30000");
-        config.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
-        config.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        config.put(KEY_DESERIALIZER, "org.apache.kafka.common.serialization.StringDeserializer");
+        config.put(VALUE_DESERIALIZER, "org.apache.kafka.common.serialization.StringDeserializer");
 
         final KafkaConsumer<String, String> consumer = new KafkaConsumer<>(config);
         consumer.subscribe(List.of(topicName));
@@ -63,8 +93,12 @@ public class App {
         while (true) {
             final ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
             for (ConsumerRecord<String, String> record : records)
-                System.out.printf(Thread.currentThread() + "\t" + appName +
-                        " offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
+                System.out.printf("%s, %s, offset = %d, key = %s, value = %s%n",
+                                  Thread.currentThread(),
+                                  appName,
+                                  record.offset(),
+                                  record.key(),
+                                  record.value());
             consumer.commitSync();
         }
     }
